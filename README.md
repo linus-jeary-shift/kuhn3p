@@ -20,14 +20,6 @@ This package provides a complete framework for running competitive 3-player Kuhn
 - **Want to understand the framework?**  
   → Read below
 
-## What This Framework Does
-
-✓ **Manages tournaments** - Runs round-robin matches between all agent combinations  
-✓ **Tracks results** - Automatic scoring, ranking, and statistics  
-✓ **Validates agents** - Discovers and loads agent files from directories  
-✓ **Ensures fairness** - Handles positional advantages through button rotation  
-✓ **Reproduces results** - Seeded random number generation for consistency  
-
 ## Example
 
 ### For Competitors
