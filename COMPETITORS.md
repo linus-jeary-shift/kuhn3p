@@ -221,7 +221,7 @@ def act(self, state, card):
 ## Tournament Format
 
 - **Players per match:** 3
-- **Hands per match:** 100,000 (maybe more)
+- **Hands per match:** 1,000,000
 - **Tournament:** Round-robin (every unique 3-player combo plays together)
 - **Ranking:** Total score across all matches
 
@@ -230,7 +230,9 @@ Your position changes each hand to balance advantages. Higher scores = better st
 
 ## Submission details
 
-Send your `{FirstName}{LastName}Agent.py` to me on Slack DMs by `01/05/2026` to guarantee your entry to the tournament.
+Send your `{FirstName}{LastName}Agent.py` to me on Slack DMs by `31/03/2026` to guarantee your entry to the tournament.
+
+You can also rename your agent file to something witty or clever, but it should ideally be unique.
 
 ## Questions?
 
