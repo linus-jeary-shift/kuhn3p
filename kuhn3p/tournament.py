@@ -25,6 +25,27 @@ from random import Random
 from kuhn3p import betting, deck, dealer
 from kuhn3p.validator import AgentValidator
 
+# All 6 permutations of seating slots [0,1,2] arranged so that every pair
+# of consecutive rounds uses one seating from each "high-exposure" class.
+# In a 3-player match with button rotation, one agent always occupies
+# acting-position 1 when the last-listed agent (typically the Exploiter) is
+# in acting-position 2 — the most advantageous position for an Exploiter.
+# Alternating between the two classes each round means that over any even
+# number of rounds, both Nash agents see each exposure type equally often.
+#
+# Classes (for matchup [A=slot0, B=slot1, E=slot2]):
+#   B_HIGH (E in pos 2 at h=3k, B in pos 1): (0,1,2), (1,2,0), (2,0,1)
+#   A_HIGH (E in pos 2, A in pos 1):          (0,2,1), (1,0,2), (2,1,0)
+# Ordering below alternates B_HIGH / A_HIGH so any 2-round window is balanced.
+_SEAT_PERMS = [
+    (0, 1, 2),   # round % 6 == 0  →  B_HIGH
+    (0, 2, 1),   # round % 6 == 1  →  A_HIGH
+    (1, 2, 0),   # round % 6 == 2  →  B_HIGH
+    (1, 0, 2),   # round % 6 == 3  →  A_HIGH
+    (2, 0, 1),   # round % 6 == 4  →  B_HIGH
+    (2, 1, 0),   # round % 6 == 5  →  A_HIGH
+]
+
 
 # ---------------------------------------------------------------------------
 # Hand record helper
@@ -85,6 +106,7 @@ def _run_match_worker(
     num_hands,
     seed,
     record_hands,
+    round_num=0,
 ):
     """
     Worker function executed in a subprocess for each match.
@@ -92,14 +114,30 @@ def _run_match_worker(
     Agents arrive as a pickled snapshot; each worker therefore operates on
     an independent copy — cross-match learning is structurally impossible.
 
+    Structured seating rotation
+    ---------------------------
+    The three agents are assigned to match-player slots 0/1/2 using the
+    deterministic permutation _SEAT_PERMS[round_num % 6].  Over any 6
+    consecutive rounds of the same matchup this cycles through all 6
+    permutations of {0,1,2} exactly once, guaranteeing that each agent
+    occupies each match-player slot equally often and that both Nash-type
+    agents see each "high-exposure" seating class (the slot that acts in
+    position 1 when the Exploiter is in position 2) the same number of
+    times.  The internal match seed is still derived from `seed` so
+    hand sequences remain reproducible.
+
     Returns
     -------
     (idx1, idx2, idx3, scores, hand_log)
-      scores    : length-3 list of net chip totals
+      scores    : length-3 list of net chip totals indexed as (idx1, idx2, idx3)
       hand_log  : list of hand-record dicts (empty when record_hands=False)
     """
-    players = [agents_snapshot[idx1], agents_snapshot[idx2], agents_snapshot[idx3]]
-    names   = [agent_names[idx1],     agent_names[idx2],     agent_names[idx3]]
+    seat_order  = _SEAT_PERMS[round_num % 6]
+    all_indices = [idx1, idx2, idx3]
+    seated      = [all_indices[seat_order[k]] for k in range(3)]
+
+    players  = [agents_snapshot[i] for i in seated]
+    names    = [agent_names[i]     for i in seated]
     match_id = (idx1, idx2, idx3)
     match = Match(
         players,
@@ -110,7 +148,11 @@ def _run_match_worker(
         record_hands = record_hands,
     )
     scores = match.play()
-    return (idx1, idx2, idx3, scores, match.hand_log)
+    # Un-permute: map match-player-slot scores back to the (idx1,idx2,idx3) order.
+    result_scores = [0, 0, 0]
+    for k in range(3):
+        result_scores[seat_order[k]] = scores[k]
+    return (idx1, idx2, idx3, result_scores, match.hand_log)
 
 
 # ---------------------------------------------------------------------------
@@ -275,19 +317,14 @@ class Tournament:
             print()
 
         done = 0
-        for _ in range(num_rounds):
+        for round_num in range(num_rounds):
+            seat_perm = _SEAT_PERMS[round_num % 6]
             for idx1, idx2, idx3 in matchups:
                 done += 1
-                players = [
-                    copy.deepcopy(self.agents[idx1][1]),
-                    copy.deepcopy(self.agents[idx2][1]),
-                    copy.deepcopy(self.agents[idx3][1]),
-                ]
-                names = [
-                    self.agents[idx1][0],
-                    self.agents[idx2][0],
-                    self.agents[idx3][0],
-                ]
+                all_idx = [idx1, idx2, idx3]
+                seated  = [all_idx[seat_perm[k]] for k in range(3)]
+                players = [copy.deepcopy(self.agents[seated[k]][1]) for k in range(3)]
+                names   = [self.agents[seated[k]][0]               for k in range(3)]
                 match = Match(
                     players,
                     num_hands    = hands_per_matchup,
@@ -296,7 +333,11 @@ class Tournament:
                     match_id     = (idx1, idx2, idx3),
                     record_hands = record_hands,
                 )
-                scores = match.play()
+                raw_scores = match.play()
+                # Un-permute scores back to (idx1, idx2, idx3) order.
+                scores = [0, 0, 0]
+                for k in range(3):
+                    scores[seat_perm[k]] = raw_scores[k]
                 self.matchups.setdefault((idx1, idx2, idx3), []).append(scores)
                 if record_hands:
                     self.hand_log.extend(match.hand_log)
@@ -353,9 +394,9 @@ class Tournament:
         agent_names = [n for n, _ in self.agents]
 
         tasks = []
-        for _ in range(num_rounds):
+        for round_num in range(num_rounds):
             for idx1, idx2, idx3 in matchups:
-                tasks.append((idx1, idx2, idx3, rng.randint(0, 2**31 - 1)))
+                tasks.append((idx1, idx2, idx3, rng.randint(0, 2**31 - 1), round_num))
 
         completed = 0
         with ProcessPoolExecutor(
@@ -367,8 +408,9 @@ class Tournament:
                     _run_match_worker,
                     agents_snap, agent_names,
                     idx1, idx2, idx3, hands_per_matchup, task_seed, record_hands,
+                    round_num,
                 ): (idx1, idx2, idx3)
-                for idx1, idx2, idx3, task_seed in tasks
+                for idx1, idx2, idx3, task_seed, round_num in tasks
             }
             for future in as_completed(futures):
                 idx1, idx2, idx3, scores, hand_log = future.result()
