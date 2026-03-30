@@ -223,10 +223,12 @@ def act(self, state, card):
 - **Players per match:** 3
 - **Hands per match:** 1,000,000
 - **Tournament:** Round-robin (every unique 3-player combo plays together)
+- **Seating:** Fixed permutation cycle — each round uses one of the 6 permutations of [0, 1, 2] in a fixed order.  Over any 6 consecutive rounds every agent occupies every seat position exactly twice, eliminating positional bias.
+- **Execution:** Matches run in parallel subprocesses (one per match).
+- **Cross-match learning:** Disabled — agents are deep-copied before each match, so no information leaks between matches.
 - **Ranking:** Total score across all matches
 
-
-Your position changes each hand to balance advantages. Higher scores = better strategy!
+Your position changes each hand (within a match) to balance advantages. Higher scores = better strategy!
 
 ## Submission details
 

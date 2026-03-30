@@ -36,7 +36,7 @@ class MyAgent(Player):
 
 ### For Tournament Organiser
 ```bash
-python run_tournament.py run --agents-dir ./agents/ --hands 1000 --rounds 3 --seed 42
+python run_tournament.py run --agents-dir ./agents/ --hands 1000 --rounds 6 --seed 42
 ```
 
 Results automatically show winner and detailed statistics.
@@ -55,7 +55,9 @@ Results automatically show winner and detailed statistics.
 
 **Tournament:**
 - All unique 3-player combinations play together
-- Each match is multiple hands with rotating positions
+- Each round uses a fixed seat permutation (cycling through all 6 permutations of [0,1,2]) to eliminate positional bias
+- Matches run in parallel subprocesses for speed
+- Agents are deep-copied per match — no cross-match learning
 - Scores sum to zero (zero-sum game)
 - Higher score = better strategy
 
