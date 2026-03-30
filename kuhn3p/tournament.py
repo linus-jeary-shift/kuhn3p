@@ -6,8 +6,9 @@ Key design principles
   Each match receives a deep-copy of every agent so that information gathered
   in one match cannot influence decisions in another.  This is the fair
   competition rule.
-* Parallelism via ProcessPoolExecutor + 'fork' context is the default mode.
-  The serial run_round_robin is retained for debugging and sequential analysis.
+* Parallelism via ProcessPoolExecutor is the default mode.  'fork' is used on
+  Unix/macOS and 'spawn' on Windows.  The serial run_round_robin is retained
+  for debugging and sequential analysis.
 * Optional hand recording captures every hand to memory; results can then be
   saved as CSV / JSON and visualised with plot_results().
 """
@@ -17,6 +18,7 @@ import csv
 import json
 import multiprocessing
 import os
+import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from itertools import combinations
@@ -363,11 +365,15 @@ class Tournament:
         record_hands=False,
     ):
         """
-        Parallel round-robin using ProcessPoolExecutor and fork workers.
+        Parallel round-robin using ProcessPoolExecutor.
 
-        Each match task runs in an isolated subprocess.  Agents are pickled
-        (deep-copied) at the point of task submission, so cross-match
-        learning is structurally impossible.
+        Uses 'fork' on Unix/macOS and 'spawn' on Windows.  Each match task
+        runs in an isolated subprocess.  Agents are pickled (deep-copied) at
+        the point of task submission, so cross-match learning is structurally
+        impossible.
+
+        Note: on Windows the calling script must guard its entry point with
+        ``if __name__ == '__main__':`` to prevent recursive worker spawning.
 
         Parameters
         ----------
@@ -398,10 +404,13 @@ class Tournament:
             for idx1, idx2, idx3 in matchups:
                 tasks.append((idx1, idx2, idx3, rng.randint(0, 2**31 - 1), round_num))
 
+        mp_context = multiprocessing.get_context(
+            'fork' if sys.platform != 'win32' else 'spawn'
+        )
         completed = 0
         with ProcessPoolExecutor(
             max_workers=max_workers,
-            mp_context=multiprocessing.get_context('fork'),
+            mp_context=mp_context,
         ) as pool:
             futures = {
                 pool.submit(
